@@ -2,10 +2,12 @@
 
 Campulse is a PPPP protocol-flow reference used by this project. Its MIT copyright and permission notice are preserved below.
 
-PyCryptodome is installed separately from the version-pinned requirements. FFmpeg and Python are supplied by the user; their binaries are not included. No Ctronics or HiChip executable/library is redistributed.
+Ready-to-run release archives include Python, PyCryptodome, the PyInstaller runtime and a separately invoked FFmpeg/x264 executable. Each archive contains component notices, BUILDINFO.json and a SOURCE.txt link to the complete FFmpeg/x264 source and build recipes on the same release. Source checkouts install their dependencies separately. No Ctronics or HiChip executable/library is redistributed.
 
 - [PyCryptodome](https://www.pycryptodome.org/src/license): public-domain and BSD-2-Clause components.
-- [FFmpeg](https://ffmpeg.org/legal.html): LGPL-2.1-or-later, with GPL terms applying to builds that include optional GPL components. The viewer invokes the user's installed executable.
+- [FFmpeg](https://ffmpeg.org/legal.html) with x264: the bundled executable is GPL-2.0-or-later. Its complete corresponding source is supplied alongside the binary downloads.
+- [Python](https://docs.python.org/3/license.html): PSF license and included component acknowledgments.
+- [PyInstaller](https://pyinstaller.org/en/stable/license.html): GPL with a bootloader distribution exception.
 
 MIT License
 

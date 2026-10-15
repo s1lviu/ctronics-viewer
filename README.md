@@ -14,7 +14,24 @@ One Python process connects the camera to your browser. No additional hosted acc
 
 The preview uses generated test feeds and demonstration credentials. PTZ controls sit below the players.
 
-## Quick start
+## Ready-to-run downloads
+
+Download the archive for your computer from [GitHub Releases](https://github.com/s1lviu/ctronics-viewer/releases/latest), extract the entire folder, and launch:
+
+| Computer | Download | Launch |
+|---|---|---|
+| Windows 10/11, x64 | windows-x86_64.zip | CtronicsViewer.exe |
+| macOS 11+, Apple Silicon | macos-arm64.zip | Launch.command |
+| macOS 11+, Intel | macos-x86_64.zip | Launch.command |
+| Linux x64, Ubuntu 22.04 or newer | linux-x86_64.tar.gz | ./Launch.sh |
+
+Python, PyCryptodome and FFmpeg are included. Keep the _internal folder next to the executable. The launcher opens your browser; closing the console window or pressing Ctrl+C exits the application.
+
+The builds are unsigned. Windows or macOS may request first-launch approval. Linux packages target glibc-based distributions; Alpine/musl is not supported.
+
+FFmpeg/x264 licenses and a corresponding-source download are provided with the release. Build details and automated archive checks are described in [BUILDING.md](BUILDING.md).
+
+## Run from source
 
 Install [Python 3.11 or newer](https://www.python.org/downloads/) and [FFmpeg](https://ffmpeg.org/download.html), then make sure ffmpeg is available on PATH. FFmpeg needs the libx264 encoder for H.265 cameras. Use a current browser with MediaSource and Web Audio support.
 
@@ -57,7 +74,7 @@ Live viewing uses the camera's mobile data. This implementation preserves the ve
 
 Hardware validation covered one SSAS 4G-LC dual-lens camera in the 600000-899999 serial range on macOS: two 640x360 streams at 15 FPS, battery updates, incoming audio and horizontal PTZ. A test of more than 12 minutes kept both players advancing at wall-clock speed, about 4 ms apart, with roughly 1.5-2 seconds buffered.
 
-Windows and Linux hardware, other camera families, main-stream quality and audible output at the user's speakers have not been verified. Audio reception, decoding and Web Audio scheduling were checked. Firmware variations may require protocol changes.
+Real-camera use on Windows/Linux, other camera families, main-stream quality and audible output at the user's speakers have not been verified. Native release archives are checked on their respective hosted build runners. Audio reception, decoding and Web Audio scheduling were checked. Firmware variations may require protocol changes.
 
 Video timing is calibrated once at connection and assumes a fixed frame rate. Reconnect if the camera changes its frame rate or a prolonged 4G interruption disrupts playback. Battery and charging indicators reflect the values reported by the camera.
 
@@ -85,6 +102,6 @@ This project is independent of Ctronics and HiChip. Their names identify compati
 
 ## License and intended use
 
-[MIT](LICENSE), including its warranty disclaimer and limitation of liability. See [THIRD_PARTY.md](THIRD_PARTY.md) for required notices. Python, FFmpeg and PyCryptodome are installed separately and are not bundled.
+[MIT](LICENSE), including its warranty disclaimer and limitation of liability. See [THIRD_PARTY.md](THIRD_PARTY.md) for required notices. The application source is MIT; bundled FFmpeg/x264 retain their GPL terms. Runtime and component notices are included in each release archive.
 
 Use this software only with cameras and accounts you own or are authorized to access.

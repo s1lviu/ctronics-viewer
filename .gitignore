@@ -21,3 +21,8 @@ outputs/
 .DS_Store
 Thumbs.db
 !docs/preview.jpg
+.build/
+dist/
+*.spec
+!tests/fixtures/video.h264
+!tests/fixtures/video.hevc

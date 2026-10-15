@@ -1,17 +1,19 @@
 """One local process: HiChip P2P -> FFmpeg -> browser, no saved credentials."""
 import json
+import http.client
 from pathlib import Path
 import select
 import secrets
 import queue
-import shutil
 import socket
+import subprocess
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from hichip import Camera
-from bridge import MediaBridge
+from bridge import MediaBridge, ffmpeg_path
 
 TOKEN = secrets.token_urlsafe(24)
 PAGE = Path(__file__).with_name('index.html').read_text(encoding='utf-8').replace('__TOKEN__', TOKEN).encode()
@@ -158,9 +160,34 @@ class Handler(BaseHTTPRequestHandler):
             self.server.active.release()
 
 
+def check_installation():
+    from Crypto.Cipher import AES
+    assert AES.new(bytes(16), AES.MODE_ECB).encrypt(bytes(16)).hex() == '66e94bd4ef8a2c3b884cfa59ca342b2e'
+    for option, required in [('-encoders', ['libx264']), ('-decoders', ['h264', 'hevc'])]:
+        output = subprocess.check_output([ffmpeg_path(), '-hide_banner', option], stderr=subprocess.STDOUT).decode()
+        assert all(name in output for name in required), 'Required video codec is missing'
+    server = ViewerServer()
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+    try:
+        connection.request('GET', '/' + TOKEN)
+        response = connection.getresponse()
+        assert response.status == 200 and response.read().count(b'<video ') == 2
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        worker.join(2)
+    print('Installation check passed.', flush=True)
+
+
 def main():
-    if not shutil.which('ffmpeg'):
+    if not ffmpeg_path():
         raise SystemExit('FFmpeg is missing. Install FFmpeg and restart the viewer.')
+    if sys.argv[1:] == ['--self-test']:
+        check_installation()
+        return
     server = ViewerServer()
     url = 'http://' + server.address + '/' + TOKEN
     print('Open in your browser: ' + url, flush=True)

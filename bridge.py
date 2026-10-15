@@ -2,7 +2,9 @@
 import itertools
 import json
 import os
+from pathlib import Path
 import queue
+import shutil
 import struct
 import subprocess
 import threading
@@ -21,8 +23,16 @@ def video_format(frame):
     raise ValueError('Missing video parameters.')
 
 
+def ffmpeg_path():
+    bundled = Path(__file__).with_name('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
+    return str(bundled) if bundled.is_file() else shutil.which('ffmpeg')
+
+
 def ffmpeg_command(codec, rate):
-    command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
+    executable = ffmpeg_path()
+    if not executable:
+        raise FileNotFoundError('FFmpeg is unavailable.')
+    command = [executable, '-hide_banner', '-loglevel', 'error', '-nostdin',
                '-fflags', '+genpts', '-probesize', '65536', '-analyzeduration', '500000',
                '-r', str(rate), '-f', codec, '-i', 'pipe:0', '-an']
     if codec == 'h264':
