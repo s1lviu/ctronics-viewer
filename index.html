@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ctronics Viewer</title>
+<style nonce="__TOKEN__">
+  :root{color-scheme:dark;font:16px system-ui;background:#111716;color:#edf4f1}
+  body{max-width:980px;margin:3vh auto;padding:24px}h1{font-size:30px;margin-bottom:8px}p,small{color:#a9bdb5}
+  form{display:flex;gap:14px;flex-wrap:wrap;margin:28px 0}label{display:grid;gap:7px;font-size:13px}
+  input,select,button{font:inherit;border:1px solid #3f514b;border-radius:8px;padding:11px;background:#1c2723;color:inherit}
+  input{width:180px}button{align-self:end;cursor:pointer;background:#b9f2d3;color:#12251b;border:0;font-weight:650}
+  button:disabled{opacity:.5;cursor:default}button.secondary{background:#25362e;color:#edf4f1}
+  input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid #b9f2d3;outline-offset:3px}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:18px 0}
+  #status{min-height:24px;margin:0}#battery{font-size:14px}.views{display:grid;gap:20px}
+  figure{margin:0}figcaption{font-size:14px;margin:0 0 8px;color:#a9bdb5}.screen{position:relative;background:#080c0a;border-radius:12px;overflow:hidden}
+  video{display:block;width:100%;aspect-ratio:16/9;max-height:60vh;background:#080c0a}
+  .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;background:#080c0a80;pointer-events:none}
+  .loading[hidden]{display:none}.wheel{width:20px;height:20px;border:2px solid #61776b;border-top-color:#b9f2d3;border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.wheel{animation:none}}
+  .controls{display:flex;align-items:center;justify-content:center;gap:28px;flex-wrap:wrap;margin:24px 0}
+  .pad{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,44px);gap:6px}.pad button{padding:6px;align-self:stretch;touch-action:none;user-select:none}
+  [data-dir=up]{grid-column:2}[data-dir=left]{grid-column:1;grid-row:2}#halt{grid-column:2;grid-row:2}[data-dir=right]{grid-column:3;grid-row:2}[data-dir=down]{grid-column:2;grid-row:3}
+  #ptz-status{max-width:260px;font-size:13px;min-height:18px}.hint{font-size:14px}
+</style>
+<h1>Ctronics Viewer</h1>
+<p>Both lenses, sound and controls in one page.</p>
+<form id="connect" autocomplete="off">
+  <label>UID<input name="uid" placeholder="SSAS-…" maxlength="128" required autocomplete="off" spellcheck="false"></label>
+  <label>Username<input name="username" value="admin" maxlength="128" required autocomplete="off" spellcheck="false"></label>
+  <label>Password<input name="password" type="password" maxlength="256" required autocomplete="off"></label>
+  <label>Quality<select name="stream"><option value="0">Low data · substream</option><option value="1">Main stream · high detail</option></select></label>
+  <button id="start">Connect</button><button id="stop" class="secondary" type="button" disabled>Disconnect</button>
+</form>
+<div class="toolbar"><p id="status" role="status" aria-live="polite">Ready to connect.</p><span id="battery">Battery —</span><button id="sound" class="secondary" type="button" disabled>Sound on</button></div>
+<div class="views">
+  <figure><figcaption>Lens 1</figcaption><div class="screen"><video controls muted playsinline disableremoteplayback aria-label="Live view, lens 1"></video><div class="loading" hidden><span class="wheel" aria-hidden="true"></span><span>Loading video…</span></div></div></figure>
+  <figure><figcaption>Lens 2</figcaption><div class="screen"><video controls muted playsinline disableremoteplayback aria-label="Live view, lens 2"></video><div class="loading" hidden><span class="wheel" aria-hidden="true"></span><span>Loading video…</span></div></div></figure>
+</div>
+<div class="controls">
+  <div class="pad" role="group" aria-label="Camera movement">
+    <button type="button" data-dir="up" aria-label="Up" disabled>↑</button><button type="button" data-dir="left" aria-label="Left" disabled>←</button>
+    <button id="halt" class="secondary" type="button" aria-label="Stop movement" disabled>■</button><button type="button" data-dir="right" aria-label="Right" disabled>→</button><button type="button" data-dir="down" aria-label="Down" disabled>↓</button>
+  </div>
+  <div><p class="hint">Hold an arrow to move the camera.</p><p id="ptz-status" role="status" aria-live="polite"></p></div>
+</div>
+<p><small>Your password is not saved. Closing this page disconnects the camera. Live viewing uses mobile data.</small></p>
+<script nonce="__TOKEN__">
+const form=document.querySelector('form'),status=document.querySelector('#status'),battery=document.querySelector('#battery');
+const start=document.querySelector('#start'),stop=document.querySelector('#stop'),sound=document.querySelector('#sound'),halt=document.querySelector('#halt');
+const videos=[...document.querySelectorAll('video')],loaders=[...document.querySelectorAll('.loading')],arrows=[...document.querySelectorAll('[data-dir]')];
+const ptzStatus=document.querySelector('#ptz-status'),token='__TOKEN__',decoder=new TextDecoder();
+let current;
+
+function waitFor(target,event,signal,action){return new Promise((resolve,reject)=>{
+  const clean=()=>{target.removeEventListener(event,ok);target.removeEventListener('error',bad);signal.removeEventListener('abort',abort)};
+  const ok=()=>{clean();resolve()},bad=()=>{clean();reject(new Error('The browser could not play this video stream.'))};
+  const abort=()=>{clean();reject(new DOMException('Stopped','AbortError'))};
+  if(signal.aborted)return abort();
+  target.addEventListener(event,ok,{once:true});target.addEventListener('error',bad,{once:true});signal.addEventListener('abort',abort,{once:true});
+  try{action?.()}catch(error){clean();reject(error)}
+})}
+
+function clearAudio(session){
+  for(const item of session.audioQueue){if(item.node){try{item.node.stop()}catch{}item.node=null}item.done=false}
+}
+function renderSound(session){
+  const playing=session.audioOn&&session.audio?.state==='running';
+  sound.disabled=!session.audio||session.audioAvailable===false;
+  sound.textContent=!session.audio?'Audio unavailable':session.audioAvailable===false?'Camera is not sending audio':playing?'Sound on':'Enable sound';
+  sound.setAttribute('aria-pressed',String(Boolean(playing)));
+}
+function pumpAudio(session){
+  if(session!==current||!session.audio)return;
+  const video=videos[0],ctx=session.audio,at=video.currentTime;
+  if(!session.audioOn||ctx.state!=='running'||video.paused||video.readyState<3){clearAudio(session);session.audioAnchor=null;return}
+  const anchor=ctx.currentTime-at;
+  if(session.audioAnchor!==null&&Math.abs(anchor-session.audioAnchor)>.2)clearAudio(session);
+  session.audioAnchor=anchor;
+  session.audioQueue=session.audioQueue.filter(item=>item.pts+item.pcm.length/8000>at-.25);
+  for(const item of session.audioQueue){
+    if(item.node||item.done||item.pts>at+.45||item.pts+item.pcm.length/8000<=at)continue;
+    const buffer=ctx.createBuffer(1,item.pcm.length,8000);buffer.copyToChannel(item.pcm,0);
+    const node=ctx.createBufferSource();node.buffer=buffer;node.connect(ctx.destination);item.node=node;
+    node.onended=()=>{node.disconnect();if(item.node===node){item.node=null;item.done=true}};
+    node.start(ctx.currentTime+Math.max(0,item.pts-at)+.03,Math.max(0,at-item.pts));
+  }
+}
+function addAudio(session,data){
+  if(data.length<6||(data.length-4)%2||data.length>32004)throw new Error('Invalid audio packet.');
+  const view=new DataView(data.buffer,data.byteOffset,data.byteLength),pcm=new Float32Array((data.length-4)/2);
+  for(let n=0;n<pcm.length;n++)pcm[n]=view.getInt16(4+2*n,true)/32768;
+  const item={pts:view.getUint32(0,true)/1000,pcm,node:null,done:false};session.audioQueue.push(item);
+  while(session.audioQueue.length>300||session.audioQueue[0].pts<item.pts-25){const old=session.audioQueue.shift();if(old.node)old.node.stop()}
+  pumpAudio(session);
+}
+sound.onclick=async()=>{
+  const session=current;if(!session?.audio)return;
+  session.audioOn=!(session.audioOn&&session.audio.state==='running');
+  if(session.audioOn){try{await session.audio.resume();session.audioOn=session.audio.state==='running'}catch{session.audioOn=false}}else clearAudio(session);
+  if(session===current){renderSound(session);pumpAudio(session)}
+};
+
+function queuePTZ(session,direction){
+  session.ptzPending=true;
+  session.ptzChain=session.ptzChain.then(async()=>{
+    if(direction!=='stop'&&(session!==current||session.held!==direction))return;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),1500);
+    try{
+      const response=await fetch('/ptz',{method:'POST',keepalive:true,signal:controller.signal,
+        headers:{'Content-Type':'application/json','X-Viewer-Token':token},body:JSON.stringify({direction})});
+      if(!response.ok&&direction!=='stop')throw new Error('Camera control is unavailable.');
+    }finally{clearTimeout(timer)}
+  }).catch(()=>{if(session===current)ptzStatus.textContent='Movement was not confirmed. Please try again.'}).finally(()=>{session.ptzPending=false});
+  return session.ptzChain;
+}
+function stopPTZ(session=current,force=false){
+  if(!session)return Promise.resolve();
+  clearInterval(session.ptzTimer);const held=session.held;session.held=null;
+  return held||force?queuePTZ(session,'stop'):session.ptzChain;
+}
+function beginPTZ(direction){
+  const session=current;if(!session||halt.disabled||session.held===direction)return;
+  stopPTZ(session);session.held=direction;ptzStatus.textContent='';queuePTZ(session,direction);
+  session.ptzTimer=setInterval(()=>{if(session===current&&session.held&&!session.ptzPending)queuePTZ(session,session.held)},300);
+}
+for(const button of arrows){
+  button.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();button.setPointerCapture(event.pointerId);beginPTZ(button.dataset.dir)});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,()=>stopPTZ());
+  button.addEventListener('blur',()=>stopPTZ());
+  button.addEventListener('keydown',event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();if(!event.repeat)beginPTZ(button.dataset.dir)}});
+  button.addEventListener('keyup',event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();stopPTZ()}});
+}
+halt.onclick=()=>stopPTZ(current,true);window.addEventListener('blur',()=>stopPTZ());
+
+function end(session=current){
+  if(!session||session!==current)return;
+  const stopped=stopPTZ(session);current=null;session.controller.abort();session.reader?.cancel().catch(()=>{});
+  clearInterval(session.audioTimer);clearAudio(session);session.audioQueue=[];session.audio?.close().catch(()=>{});
+  for(let n=0;n<videos.length;n++){
+    const video=videos[n],player=session.players[n];
+    if(player)for(const [event,handler]of Object.entries(player.events))video.removeEventListener(event,handler);
+    video.pause();video.removeAttribute('src');video.load();if(player?.url)URL.revokeObjectURL(player.url);loaders[n].hidden=true;
+  }
+  stop.disabled=true;sound.disabled=true;halt.disabled=true;arrows.forEach(button=>button.disabled=true);
+  stopped.finally(()=>{if(!current)start.disabled=false});
+}
+function fail(session,message){if(session===current){status.textContent=message;end(session)}}
+stop.onclick=()=>{end();status.textContent='Disconnected.'};window.addEventListener('pagehide',()=>end());
+
+async function setupVideo(session,meta){
+  if(![0,1].includes(meta.video)||!/^[a-z0-9]+\.[a-f0-9]{6}$/i.test(meta.codec))throw new Error('Invalid video parameters.');
+  const n=meta.video;if(session.players[n])return;
+  const Media=window.MediaSource||window.ManagedMediaSource,mime='video/mp4; codecs="'+meta.codec+'"';
+  if(!Media.isTypeSupported(mime))throw new Error('This browser cannot play the stream. Try a current browser.');
+  const media=new Media(),video=videos[n],player={media,url:URL.createObjectURL(media),started:false,events:{}};
+  session.players[n]=player;
+  player.events={playing:()=>{loaders[n].hidden=true;if(session===current)status.textContent='Live'},
+    waiting:()=>{if(session===current)loaders[n].hidden=false},
+    error:()=>fail(session,'Video playback stopped. Reconnect to continue.')};
+  for(const [event,handler]of Object.entries(player.events))video.addEventListener(event,handler);
+  await waitFor(media,'sourceopen',session.controller.signal,()=>{video.src=player.url});
+  player.buffer=media.addSourceBuffer(mime);halt.disabled=false;arrows.forEach(button=>button.disabled=false);
+}
+async function addVideo(session,n,data){
+  const player=session.players[n],video=videos[n],signal=session.controller.signal;
+  if(!player?.buffer)throw new Error('The video stream started without parameters.');
+  const buffer=player.buffer;
+  if(buffer.buffered.length){
+    const edge=buffer.buffered.end(buffer.buffered.length-1),trim=edge-25;
+    if(trim>buffer.buffered.start(0)+5){
+      if(video.currentTime<trim){video.currentTime=Math.max(0,edge-2);if(n===0)clearAudio(session)}
+      await waitFor(buffer,'updateend',signal,()=>buffer.remove(0,trim));
+    }
+  }
+  await waitFor(buffer,'updateend',signal,()=>buffer.appendBuffer(data));
+  if(!player.started&&buffer.buffered.length&&buffer.buffered.end(0)-buffer.buffered.start(0)>=1.7){
+    player.started=true;video.currentTime=buffer.buffered.start(0);
+    video.play().catch(()=>{if(session===current){loaders[n].hidden=true;status.textContent='Press play on the video to start.'}});
+  }
+}
+function metadata(session,data){
+  const meta=JSON.parse(decoder.decode(data));
+  if(meta.ptzError)ptzStatus.textContent='The camera did not confirm movement. Please try again.';
+  if(Number.isFinite(meta.battery)&&meta.battery>=0&&meta.battery<=100)battery.textContent='Battery '+Math.round(meta.battery)+'%'+(meta.charging?' · charging':'');
+  if(typeof meta.audio==='boolean'){session.audioAvailable=meta.audio;renderSound(session)}
+  if(meta.video!==undefined)return setupVideo(session,meta);
+}
+async function readRecords(session){
+  let part=new Uint8Array(),offset=0;
+  async function take(size,optional=false){
+    const result=new Uint8Array(size);let written=0;
+    while(written<size){
+      if(offset===part.length){const next=await session.reader.read();if(next.done){if(optional&&!written)return null;throw new Error('The camera stream ended. Reconnect to continue.')}part=next.value;offset=0}
+      const count=Math.min(size-written,part.length-offset);result.set(part.subarray(offset,offset+count),written);offset+=count;written+=count;
+    }
+    return result;
+  }
+  while(!session.controller.signal.aborted){
+    const header=await take(5,true);if(!header)throw new Error('The camera stream ended. Reconnect to continue.');
+    const kind=header[0],size=new DataView(header.buffer).getUint32(1);
+    if(kind>4||!size||size>4*1024*1024||(kind>=3&&size>8192))throw new Error('Invalid video packet.');
+    const data=await take(size);if(session.controller.signal.aborted)return;
+    if(kind<2)await addVideo(session,kind,data);else if(kind===2)addAudio(session,data);else if(kind===3)await metadata(session,data);else throw new Error(decoder.decode(data).slice(0,512));
+  }
+}
+form.onsubmit=async event=>{
+  event.preventDefault();if(current||start.disabled)return;
+  const session={controller:new AbortController(),players:[],audioQueue:[],audioOn:true,audioAnchor:null,ptzChain:Promise.resolve(),held:null};
+  current=session;const signal=session.controller.signal;start.disabled=true;stop.disabled=false;status.textContent='Connecting to camera…';battery.textContent='Battery —';ptzStatus.textContent='';loaders.forEach(loader=>loader.hidden=false);
+  try{
+    if(!(window.MediaSource||window.ManagedMediaSource))throw new Error('This browser does not support live playback. Try a current browser.');
+    const Audio=window.AudioContext||window.webkitAudioContext;
+    if(Audio){try{
+      session.audio=new Audio({latencyHint:'interactive'});session.audio.onstatechange=()=>{if(session===current)renderSound(session)};
+      session.audio.resume().then(()=>{session.audioOn=session.audio.state==='running';if(session===current)renderSound(session)}).catch(()=>{session.audioOn=false;if(session===current)renderSound(session)});
+    }catch{}}
+    renderSound(session);session.audioTimer=setInterval(()=>pumpAudio(session),50);
+    const values=Object.fromEntries(new FormData(form));
+    const request=fetch('/stream',{method:'POST',signal,headers:{'Content-Type':'application/json','X-Viewer-Token':token},body:JSON.stringify(values)});
+    form.elements.password.value='';values.password='';
+    const response=await request;if(!response.ok)throw new Error(await response.text());
+    session.reader=response.body.getReader();status.textContent='Preparing video…';await readRecords(session);
+  }catch(error){if(!signal.aborted)status.textContent=error.message}
+  finally{end(session)}
+};
+</script>
+</html>
