@@ -61,7 +61,7 @@ class LauncherTest(unittest.TestCase):
             python = self.make_python(self.base / '.venv')
             with mock.patch.object(launcher.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)):
                 self.assertEqual(launcher.prepare(self.base), python)
-                self.assertTrue(str(python).endswith('Scripts/python.exe'))
+                self.assertEqual(python.parts[-2:], ('Scripts', 'python.exe'))
 
 
 if __name__ == '__main__':

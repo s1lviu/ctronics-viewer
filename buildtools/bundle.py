@@ -49,6 +49,12 @@ def main(version, target):
                 source = Path(distribution.locate_file(item))
                 if source.is_file():
                     shutil.copy2(source, licenses/(name_dist+'-'+str(item).replace('/', '_').replace('\\', '_')))
+    shutil.copytree(ROOT/'buildtools/runtime-notices', licenses/'runtime')
+    if os.name == 'nt':
+        shutil.copy2(Path(sys.base_prefix)/'LICENSE.txt', licenses/'PYTHON-DISTRIBUTION.txt')
+    elif sys.platform.startswith('linux'):
+        for component in ('libbz2-1.0', 'libffi8', 'liblzma5', 'libssl3', 'zlib1g'):
+            shutil.copy2(Path('/usr/share/doc')/component/'copyright', licenses/(component+'-COPYRIGHT.txt'))
     python_version = platform.python_version()
     for url, dest in [(f'https://raw.githubusercontent.com/python/cpython/v{python_version}/LICENSE', 'PYTHON.txt'),
                       (f'https://docs.python.org/{sys.version_info.major}.{sys.version_info.minor}/license.html', 'PYTHON-ACKNOWLEDGMENTS.html')]:
