@@ -25,9 +25,9 @@ Download the archive for your computer from [GitHub Releases](https://github.com
 | macOS 11+, Intel | macos-x86_64.zip | Launch.command |
 | Linux x64, Ubuntu 22.04 or newer | linux-x86_64.tar.gz | ./Launch.sh |
 
-Python, PyCryptodome and FFmpeg are included. Keep the _internal folder next to the executable. The launcher opens your browser; closing the console window or pressing Ctrl+C exits the application.
+Python, PyCryptodome and FFmpeg are included. Keep the extracted files together. On macOS the runtime is embedded in one executable and unpacks to a temporary directory at startup; Windows/Linux keep it in the _internal folder. The launcher opens your browser; closing the console window or pressing Ctrl+C exits the application.
 
-The builds are unsigned. Windows or macOS may request first-launch approval. Linux packages target glibc-based distributions; Alpine/musl is not supported.
+The builds do not have a distribution certificate; macOS builds are not notarized. Windows or macOS may request first-launch approval. If macOS blocks CtronicsViewer, use System Settings > Privacy & Security > Open Anyway, then launch it again. See [Apple's first-launch instructions](https://support.apple.com/en-us/102445). macOS 0.1.0 archives exposed individual Python libraries to download quarantine; use 0.1.1 or later. Linux packages target glibc-based distributions; Alpine/musl is not supported.
 
 FFmpeg/x264 licenses and a corresponding-source download are provided with the release. Build details and automated archive checks are described in [BUILDING.md](BUILDING.md).
 

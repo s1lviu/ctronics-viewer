@@ -1,4 +1,4 @@
-"""Create a portable, native PyInstaller folder with its licenses and FFmpeg."""
+"""Create a native release archive with its licenses and FFmpeg."""
 import hashlib
 import importlib.metadata
 import json
@@ -23,7 +23,9 @@ def main(version, target):
     assert machine == ('arm64' if target.endswith('arm64') else 'x86_64'), 'Runner architecture mismatch'
     assert platform.system() == ('Windows' if target.startswith('windows') else 'Darwin' if target.startswith('macos') else 'Linux')
     executable = ROOT/'.build/media/bin'/('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
-    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
+    single_file = sys.platform == 'darwin'
+    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+                    '--onefile' if single_file else '--onedir',
                     '--name', 'CtronicsViewer', '--distpath', str(ROOT/'.build/dist'),
                     '--workpath', str(ROOT/'.build/pyinstaller'), '--specpath', str(ROOT/'.build'),
                     '--add-data', str(ROOT/'index.html')+os.pathsep+'.',
@@ -35,7 +37,11 @@ def main(version, target):
     folder = output/name
     if folder.exists():
         shutil.rmtree(folder)
-    shutil.copytree(ROOT/'.build/dist/CtronicsViewer', folder, symlinks=True)
+    if single_file:
+        folder.mkdir()
+        shutil.copy2(ROOT/'.build/dist/CtronicsViewer', folder/'CtronicsViewer')
+    else:
+        shutil.copytree(ROOT/'.build/dist/CtronicsViewer', folder, symlinks=True)
     licenses = folder/'licenses'
     licenses.mkdir()
     for source, dest in [(ROOT/'LICENSE', 'PROJECT.txt'), (ROOT/'THIRD_PARTY.md', 'THIRD_PARTY.md'),
@@ -76,10 +82,11 @@ def main(version, target):
         f'Extract the entire archive before launching {entry}.\n'
         'On macOS you can double-click Launch.command. On Linux run ./Launch.sh.\n'
         'Python and FFmpeg are included; no separate installation is needed.\n'
-        'Keep the _internal folder beside the executable.\n'
+        'Keep all extracted files together. macOS embeds its runtime in the executable.\n'
         'The viewer opens your browser. Enter your camera UID, username and password.\n'
         'Close this console window or press Ctrl+C to exit the application.\n'
-        'These builds are unsigned; Windows/macOS may require first-launch OS approval.\n'
+        'These builds are not signed with a distribution certificate or notarized.\n'
+        'On macOS, if CtronicsViewer is blocked, open System Settings > Privacy & Security > Open Anyway.\n'
         'Source, licenses and known compatibility limits are on the release page.\n',
         encoding='utf-8')
     info = {'version': version, 'target': target, 'python': python_version,

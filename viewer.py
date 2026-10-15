@@ -8,12 +8,13 @@ import queue
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from hichip import Camera
-from bridge import MediaBridge, ffmpeg_path
+from bridge import MediaBridge, ffmpeg_path, ffmpeg_command
 
 TOKEN = secrets.token_urlsafe(24)
 PAGE = Path(__file__).with_name('index.html').read_text(encoding='utf-8').replace('__TOKEN__', TOKEN).encode()
@@ -160,12 +161,27 @@ class Handler(BaseHTTPRequestHandler):
             self.server.active.release()
 
 
-def check_installation():
+def check_installation(fixtures=None):
     from Crypto.Cipher import AES
     assert AES.new(bytes(16), AES.MODE_ECB).encrypt(bytes(16)).hex() == '66e94bd4ef8a2c3b884cfa59ca342b2e'
     for option, required in [('-encoders', ['libx264']), ('-decoders', ['h264', 'hevc'])]:
         output = subprocess.check_output([ffmpeg_path(), '-hide_banner', option], stderr=subprocess.STDOUT).decode()
         assert all(name in output for name in required), 'Required video codec is missing'
+    if fixtures is not None:
+        with tempfile.TemporaryDirectory(prefix='viewer media check ') as temporary:
+            for codec in ('h264', 'hevc'):
+                movie = Path(temporary)/(codec+'.mp4')
+                result = subprocess.run(ffmpeg_command(codec, 15),
+                                        input=(fixtures/('video.'+codec)).read_bytes(),
+                                        capture_output=True, check=True, timeout=30)
+                movie.write_bytes(result.stdout)
+                result = subprocess.run([ffmpeg_path(), '-hide_banner', '-loglevel', 'error', '-xerror',
+                                         '-i', str(movie), '-map', '0:v:0', '-progress', 'pipe:1',
+                                         '-f', 'null', '-'], capture_output=True, check=True, timeout=30)
+                frames = [int(line.split('=')[1]) for line in result.stdout.decode().splitlines()
+                          if line.startswith('frame=')]
+                assert frames[-1] == 45, (codec, frames)
+                print('Bundled video round trip passed:', codec, flush=True)
     server = ViewerServer()
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
@@ -185,8 +201,10 @@ def check_installation():
 def main():
     if not ffmpeg_path():
         raise SystemExit('FFmpeg is missing. Install FFmpeg and restart the viewer.')
-    if sys.argv[1:] == ['--self-test']:
-        check_installation()
+    if sys.argv[1:2] == ['--self-test']:
+        if len(sys.argv) > 3:
+            raise SystemExit('Usage: CtronicsViewer --self-test [fixture-directory]')
+        check_installation(Path(sys.argv[2]) if len(sys.argv) == 3 else None)
         return
     server = ViewerServer()
     url = 'http://' + server.address + '/' + TOKEN
